@@ -1,7 +1,8 @@
-import netCDF4, datetime, calendar, urllib, re
+import netCDF4, calendar, urllib, re
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.dates as md
+from matplotlib import animation
+from datetime import datetime as dt
 
 class CDIPBouy:
     def __init__(self, station, deploy='rt'):
@@ -36,10 +37,11 @@ class CDIPBouy:
         return wt[idx]
 
     def spectrum2D(self, t):
+        t = self.nearest_time(t)
         url = (
             'http://cdip.ucsd.edu/data_access/MEM_2dspectra.cdip?sp' +
             str(self.station) + '01' + 
-            datetime.datetime.utcfromtimestamp(int(self.nearest_time(t))).strftime('%Y%m%d%H%M')
+            dt.utcfromtimestamp(int(t)).strftime('%Y%m%d%H%M')
         )
         data = map(float, re.findall('\d\.\d+', urllib.urlopen(url).read()))
         
@@ -48,30 +50,57 @@ class CDIPBouy:
         freq   = np.array(self.nc.variables['waveFrequency'])
         angle  = np.pi*np.arange(2.5, 367.5, 5)/180
         return energy, freq, angle
-                
-    def plot_spectrum2D(self, t):
-        T = self.nearest_time(t)
-        energy, freq, angle = b.spectrum2D(T)
+
+class DirectionalSpectrumAnimation:
+    def __init__(self, bouy, start_time):
+        self.bouy, self.wave_time = bouy, bouy.wave_time()
+        self.idx = np.abs(start_time - self.wave_time).argmin()
+
+    def animate(self, i):
+        T = int(self.wave_time[self.idx+i])
+        energy, freq, angle = self.bouy.spectrum2D(T)
+        Emin, Emax = np.amin(energy), np.amax(energy)
+        levels = np.arange(Emin + (Emax - Emin)*0.01, Emax, 0.0001)
+        
+        cntr = self.ax.contourf(angle, freq[:35], energy[:35, :], levels)
+        plt.title(self.bouy.name() + " @ " + 
+                  dt.utcfromtimestamp(T).strftime("%m/%d/%Y %H:%M"))        
+        return self.ax,
+
+    def plot(self, i=0):
+        T = int(self.wave_time[self.idx+i])
+        energy, freq, angle = self.bouy.spectrum2D(T)
         Emin, Emax = np.amin(energy), np.amax(energy)
         levels = np.arange(Emin + (Emax - Emin)*0.01, Emax, 0.0001)
         
         fig = plt.figure()
 
-        ax = plt.subplot(111, polar=True)
-        ax.set_theta_direction(-1)
-        ax.set_theta_zero_location("N")
+        self.ax = plt.subplot(111, polar=True)
+        self.ax.set_theta_direction(-1)
+        self.ax.set_theta_zero_location("N")
         ylabels = ([20,10,6.7,5,4])
-        ax.set_yticklabels(ylabels)
+        self.ax.set_yticklabels(ylabels)
 
-        print np.amin(energy), np.amax(energy)
-        ax.contourf(angle, freq[:35], energy[:35, :], levels)
+        cntr = self.ax.contourf(angle, freq[:35], energy[:35, :], levels)
         plt.thetagrids(np.arange(0, 360, 30), labels=None, frac=1.07)
-        plt.title(self.name() + " @ " + 
-                  datetime.datetime.utcfromtimestamp(int(T)).strftime("%m/%d/%Y %H:%M"))
+        plt.title(self.bouy.name() + " @ " + 
+                  dt.utcfromtimestamp(T).strftime("%m/%d/%Y %H:%M"))
         
+        cbar = fig.colorbar(cntr)
+        cbar.set_label('Energy Density (m*m/Hz/deg)', rotation=270)
+        
+        return fig, self.ax
+
+    def show(self):
         plt.show()        
         
 b = CDIPBouy('100')
-b.plot_spectrum2D(calendar.timegm(datetime.datetime.utcnow().timetuple()))
+
+ds = DirectionalSpectrumAnimation(b, calendar.timegm(dt.utcnow().timetuple()) - 3600*24*7)
+fig, ax = ds.plot()
+
+anim = animation.FuncAnimation(fig, ds.animate, frames=10, interval=20, blit=False)
+
+ds.show()
 
 
