@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import animation
 from datetime import datetime as dt
+import h5py
 
 class CDIPBouy:
     def __init__(self, station, deploy='rt'):
@@ -88,19 +89,25 @@ class DirectionalSpectrumAnimation:
         
         cbar = fig.colorbar(cntr)
         cbar.set_label('Energy Density (m*m/Hz/deg)', rotation=270)
-        
         return fig, self.ax
 
     def show(self):
         plt.show()        
+
+f = h5py.File('cdip.hdf5', 'w')
+for i in range(999):
+    try:
+        b  = CDIPBouy('%03d' % i)
+        grp = f.create_group('%03d' % i)
+        wave_time = grp.create_dataset('wave_time', data=b.wave_time())
+        energy    = grp.create_dataset('energy', (wave_time.shape[0], 64, 73), dtype=np.float32)
+        freq      = grp.create_dataset('freq',   (wave_time.shape[0], 64),     dtype=np.float32)
         
-b = CDIPBouy('100')
-
-ds = DirectionalSpectrumAnimation(b, calendar.timegm(dt.utcnow().timetuple()) - 3600*24*7)
-fig, ax = ds.plot()
-
-anim = animation.FuncAnimation(fig, ds.animate, frames=10, interval=20, blit=False)
-
-ds.show()
-
+        for i, wt in enumerate(wave_time):
+            e, frq, a = b.spectrum2D(wt)
+            energy[i], freq[i] = e, frq.flatten()
+    except Exception as e:
+        print e
+            
+            
 
