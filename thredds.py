@@ -32,13 +32,16 @@ class CDIPBouy:
     def wave_time(self):
         return np.array(self.nc.variables['waveTime'])
 
-    def nearest_time(self, t):
+    def nearest_time(self, t, strict_direction=0):
         wt = self.wave_time()
-        idx = np.abs(wt - t).argmin()
-        return wt[idx]
+        if strict_direction == 0:
+            idx = np.abs(wt - t).argmin()
+        else:
+            idx = (strict_direction*(wt - t) + np.inf*(strict_direction*(wt - t) < 0)).argmin()
+        return wt[idx], idx
 
-    def spectrum2D(self, t):
-        t = self.nearest_time(t)
+    def spectrum2D(self, t, strict_direction=0):
+        t, _ = self.nearest_time(t, strict_direction)
         url = (
             'http://cdip.ucsd.edu/data_access/MEM_2dspectra.cdip?sp' +
             str(self.station) + '01' + 
@@ -51,6 +54,30 @@ class CDIPBouy:
         freq   = np.array(self.nc.variables['waveFrequency'])
         angle  = np.pi*np.arange(2.5, 367.5, 5)/180
         return energy, freq, angle
+
+    def to_hdf5_buoy(self, f, grp_name):
+        f.create_group(grp_name)
+        wave_time = f.create_dataset('wave_time', data=self.wave_time())
+        energy    = f.create_dataset('energy', (wave_time.shape[0], 64, 73), dtype=np.float32)
+        freq      = f.create_dataset('freq',   (wave_time.shape[0], 64),     dtype=np.float32)
+        
+        for i, wt in enumerate(wave_time):
+            e, frq, a = self.spectrum2D(wt)
+            energy[i], freq[i] = e, frq.flatten()
+        return HDF5Buoy(f, grp_name)
+        
+
+class HDF5Buoy:
+    def __init__(self, f, station):
+        self.station = station
+        self.energy, self.freq, self.wtime = f[station]['energy'], f[station]['freq'], f[station]['wave_time']
+
+    def wave_time(self):
+        return self.wtime
+
+    def spectrum2D(self, t, strict_direction=0):
+        _, idx = self.nearest_time(t, strict_direction)
+        return self.energy[idx], self.freq[idx], np.pi*np.arange(2.5, 367.5, 5)/180
 
 class DirectionalSpectrumAnimation:
     def __init__(self, bouy, start_time):
@@ -94,20 +121,22 @@ class DirectionalSpectrumAnimation:
     def show(self):
         plt.show()        
 
+def align_buoys(master, supplemental):
+    min_time = max([min(master.wave_time())] + [b.wave_time() for b in supplemental])
+    max_time = min([max(master.wave_time()[:-1])] + [b.wave_time() for b in supplemental])
+    for i, wt in enumerate(master.wave_time()):
+        if wt > min_time and wt < max_time:
+            X = np.array([master.spectrum(wt, strict_direction=-1)[0].flatten()] + 
+                         [b.spectrum(wt, strict_direction=-1)[0].flatten() for b in supplemental]).flatten()
+            y = master.spectrum(master.wave_time()[i+1], strict_direction=-1)
+            yield X, y
+            
+
+"""
 f = h5py.File('cdip.hdf5', 'w')
 for i in range(999):
     try:
-        b  = CDIPBouy('%03d' % i)
-        grp = f.create_group('%03d' % i)
-        wave_time = grp.create_dataset('wave_time', data=b.wave_time())
-        energy    = grp.create_dataset('energy', (wave_time.shape[0], 64, 73), dtype=np.float32)
-        freq      = grp.create_dataset('freq',   (wave_time.shape[0], 64),     dtype=np.float32)
-        
-        for i, wt in enumerate(wave_time):
-            e, frq, a = b.spectrum2D(wt)
-            energy[i], freq[i] = e, frq.flatten()
+        CDIPBouy('%03d' % i).to_hdf5_buoy(f, '%03d' % i)
     except Exception as e:
         print e
-            
-            
-
+"""            
