@@ -5,7 +5,7 @@ from matplotlib import animation
 from datetime import datetime as dt
 import h5py
 
-class CDIPBouy:
+class CDIPBuoy:
     def __init__(self, station, deploy='rt'):
         if not isinstance(deploy, str):
             deplot = '%02d' % deploy
@@ -55,6 +55,11 @@ class CDIPBouy:
         angle  = np.pi*np.arange(2.5, 367.5, 5)/180
         return energy, freq, angle
 
+    def spectrum(self, t, strict_direction=0):
+        t, idx = self.nearest_time(t, strict_direction)
+        return (np.array(self.nc.variables['waveFrequency']),
+                np.array(self.nc.variables['waveEnergyDensity'][idx]))
+    
     def to_hdf5_buoy(self, f, grp_name):
         f.create_group(grp_name)
         wave_time = f.create_dataset('wave_time', data=self.wave_time())
@@ -132,11 +137,3 @@ def align_buoys(master, supplemental):
             yield X, y
             
 
-"""
-f = h5py.File('cdip.hdf5', 'w')
-for i in range(999):
-    try:
-        CDIPBouy('%03d' % i).to_hdf5_buoy(f, '%03d' % i)
-    except Exception as e:
-        print e
-"""            
