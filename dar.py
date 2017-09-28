@@ -35,14 +35,26 @@ class CDIPBuoy:
         return df, meta
 
     def compute_Hs(self, datetime_utc=None):
+        """
+        Compute Significant Wave Height
+        See http://www.ndbc.noaa.gov/wavemeas.pdf
+        and "The sampling variability of estimates of spectra of wind-generated gravity waves" by Dolan and Pierson
+        """
         df, _ = self.pm(datetime_utc)
-        return 4 * np.sum(df['energy']*df['Band'])**0.5
+        Hs = 4 * np.sum(df['energy']*df['Band'])**0.5
+        # I don't know why df['Band'] isn't in the below,
+        # but thats what the equ said and I didn't want to read more.
+        TDF = 2 * np.sum(df['energy'])**2 / np.sum(df['energy']**2)
+        low, high = 10**(-TDF**(-0.5)) * Hs, 10**(TDF**(-0.5)) * Hs
+        return Hs, (low, high)
         
+
 if __name__ == '__main__':
     b = CDIPBuoy('100')
+    print(b.compute_Hs())
     
     t = datetime.datetime.utcnow() - datetime.timedelta(hours=4)
     for i in range(100):
         df, meta = b.pm(t)
-        assert abs(float(meta['Hs(m)']) - b.compute_Hs(t)) < 0.2
+        assert abs(float(meta['Hs(m)']) - b.compute_Hs(t)[0]) < 0.2
         t -= datetime.timedelta(minutes=30)
