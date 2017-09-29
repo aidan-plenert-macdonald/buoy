@@ -17,7 +17,7 @@ class CDIPBuoy:
     def st(self, start_datetime=None, end_datetime=None):
         txt = self._get('st', start_datetime, end_datetime)
         parts = re.findall('(\d{14})\s+[\d\.]+\s+[\d\.]+\s+[\d\.]+\s+[\d\.]+\s*((?:[\d\-\.]{,10}[\s]+)+)', txt)
-        columns = ['frequency', 'bandwidth', 'Dmean', 'a1', 'b1', 'a2', 'b2', 'checkfactor']
+        columns = ['frequency', 'bandwidth', 'energy', 'Dmean', 'a1', 'b1', 'a2', 'b2', 'checkfactor']
         df = pd.DataFrame(columns=['datetime'] + columns)
         for dt, data in parts:
             sio = io.StringIO()
@@ -29,8 +29,33 @@ class CDIPBuoy:
         
         return df
 
+    def sm(self, start_datetime=None, end_datetime=None):
+        sio = io.StringIO()
+        sio.write(self._get('sm', start_datetime, end_datetime))
+        sio.seek(0)
+        return pd.read_csv(sio, sep='\s+', header=None, parse_dates=[0],
+                           names=['datetime', 'm0', 'm1',
+                                  'm2', 'm3', 'm4', 'm5'])
+
+    def Hs(self, start_datetime=None, end_datetime=None):
+        """
+        Compute Significant Wave Height
+        See http://www.ndbc.noaa.gov/wavemeas.pdf
+        and "The sampling variability of estimates of spectra of wind-generated gravity waves" by Dolan and Pierson
+        """
+        st = self.st(start_datetime, end_datetime)
+        st['dE'] = st['energy']*st['bandwidth']
+        st['E^2'] = st['energy']**2
+        group_st = st.groupby(['datetime'])
+        TDF = 2 * group_st['energy'].sum()**2 / group_st['E^2'].sum()
+
+        df = (4*group_st['dE'].sum()**0.5).to_frame(name='Hs')
+        df['Hs_low']  = 10**(-TDF**(-0.5)) * df['Hs']
+        df['Hs_high'] = 10**(TDF**(-0.5))  * df['Hs']
+        return df
 
 if __name__ == '__main__':
     b = CDIPBuoy('100')
-    print(b.st(datetime.datetime.now() - datetime.timedelta(days=2),
-               datetime.datetime.now()))
+    height = b.Hs(datetime.datetime.now() - datetime.timedelta(days=20),
+                  datetime.datetime.now())
+    print(height)
