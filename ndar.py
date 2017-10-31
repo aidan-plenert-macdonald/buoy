@@ -15,6 +15,17 @@ class CDIPBuoy:
         return re.sub('\<\/?pre\>', '', requests.get(url).text)
 
     def st(self, start_datetime=None, end_datetime=None):
+        """
+        30 min decomp of swell including the below columns for each datetime increment
+
+         freq   Band      energy   Dmean     a1       b1       a2       b2    Check
+          Hz    width     m*m/Hz    deg                                       factor
+         0.0250  0.0050     0.0003   221   -0.1792  -0.1533  -0.3378   0.3161   2.55
+         0.0300  0.0050     0.0006   229   -0.1814  -0.2084   0.0993  -0.1183   2.55
+
+        More info http://cdip.ucsd.edu/?nav=documents&sub=index&xitem=description&xdoc=sp_format
+        Just note that for ndar, sp got renamed to st
+        """
         txt = self._get('st', start_datetime, end_datetime)
         parts = re.findall('(\d{14})\s+[\d\.]+\s+[\d\.]+\s+[\d\.]+\s+[\d\.]+\s*((?:[\d\-\.]{,10}[\s]+)+)', txt)
         columns = ['frequency', 'bandwidth', 'energy', 'Dmean', 'a1', 'b1', 'a2', 'b2', 'checkfactor']
@@ -30,6 +41,13 @@ class CDIPBuoy:
         return df
 
     def sm(self, start_datetime=None, end_datetime=None):
+        """
+        I believe these are the central moments of the swell energy function
+
+        Returns:
+            pd.DataFrame(columns=['datetime', 'm0', 'm1', 'm2',
+                                  'm3', 'm4', 'm5'])
+        """
         sio = io.StringIO()
         sio.write(self._get('sm', start_datetime, end_datetime))
         sio.seek(0)
